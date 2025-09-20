@@ -85,7 +85,7 @@ export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
   const fetchLeads = async () => {
     try {
@@ -96,7 +96,7 @@ export default function LeadsPage() {
       })
 
       if (searchTerm) params.append('search', searchTerm)
-      if (statusFilter) params.append('status', statusFilter)
+      if (statusFilter && statusFilter !== 'ALL') params.append('status', statusFilter)
 
       const response = await fetch(`/api/leads?${params}`)
 
@@ -300,7 +300,7 @@ export default function LeadsPage() {
                 <SelectValue placeholder="Filtrar por status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos os status</SelectItem>
+                <SelectItem value="ALL">Todos os status</SelectItem>
                 <SelectItem value="NEW">Novo</SelectItem>
                 <SelectItem value="CONTACTED">Contatado</SelectItem>
                 <SelectItem value="QUALIFIED">Qualificado</SelectItem>

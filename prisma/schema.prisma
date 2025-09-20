@@ -42,6 +42,7 @@ model User {
   whatsappMessages       WhatsAppMessage[]
   whatsappTemplates      WhatsAppTemplate[]
   messageFlows           MessageFlow[]
+  tagAssignments         LeadTagAssignment[]
 
   @@map("users")
 }
@@ -92,6 +93,7 @@ model Lead {
   campaignRecipients     CampaignRecipient[]
   salesCelebrations      SalesCelebration[]
   whatsappConversations  WhatsAppConversation[]
+  tagAssignments         LeadTagAssignment[]
 
   @@map("leads")
 }
@@ -709,4 +711,36 @@ model AudioGeneration {
   account WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@map("audio_generations")
+}
+
+// Lead Tags System
+model LeadTag {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  color      String   @default("#3B82F6")
+  category   String?  // e.g., "source", "interest", "priority"
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  leadTags   LeadTagAssignment[]
+
+  @@map("lead_tags")
+}
+
+model LeadTagAssignment {
+  id       String   @id @default(cuid())
+  leadId   String
+  tagId    String
+  assignedAt DateTime @default(now())
+  assignedBy String?
+
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag      LeadTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  assigner User?    @relation(fields: [assignedBy], references: [id])
+
+  @@unique([leadId, tagId])
+  @@index([leadId])
+  @@index([tagId])
+  @@map("lead_tag_assignments")
 }
