@@ -10,16 +10,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession()
   const router = useRouter()
 
-  // TEMPORÁRIO: Bypass total de autenticação para testes
-  const skipAuth = true
-
   useEffect(() => {
-    if (status === 'unauthenticated' && !skipAuth) {
+    if (status === 'unauthenticated') {
       router.push('/auth/signin')
     }
-  }, [status, router, skipAuth])
+  }, [status, router])
 
-  if (status === 'loading' && !skipAuth) {
+  if (status === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -30,7 +27,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (status === 'unauthenticated' && !skipAuth) {
+  if (status === 'unauthenticated') {
     return null
   }
 

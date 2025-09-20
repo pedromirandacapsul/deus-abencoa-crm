@@ -168,10 +168,7 @@ export async function GET(request: NextRequest) {
     // Check authentication for admin routes
     const session = await getServerSession(authOptions)
 
-    // TEMPORÁRIO: Bypass de autenticação para testes
-    const skipAuth = true
-
-    if (!session && !skipAuth) {
+    if (!session) {
       return NextResponse.json(
         { success: false, error: 'Não autenticado' },
         { status: 401 }

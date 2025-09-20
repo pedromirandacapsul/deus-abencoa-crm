@@ -7,17 +7,13 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
 
-    // TEMPORÁRIO: Bypass de autenticação para testes
-    const skipAuth = true
-    const userId = session?.user?.id || 'cmfsrmudu0000b240mvscfyge' // Admin user ID para bypass
-
-    if (!session?.user?.id && !skipAuth) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const accounts = await prisma.whatsAppAccount.findMany({
-      where: skipAuth ? {} : {
-        userId: userId,
+      where: {
+        userId: session.user.id,
       },
       include: {
         _count: {

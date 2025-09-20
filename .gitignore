@@ -58,6 +58,9 @@ nul
 mingw64.7z
 *.7z
 
+# Submodules
+zapmeow/
+
 # IDE
 .vscode/
 .idea/
