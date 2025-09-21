@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Table,
   TableBody,
@@ -11,33 +13,38 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Search,
-  Filter,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
+import {
   Download,
   Plus,
   Eye,
-  CheckCircle,
+  Edit,
+  ExternalLink,
+  MoreHorizontal,
+  ArrowUpDown,
   Clock,
-  AlertTriangle,
-  Calendar,
-  User,
   ChevronLeft,
   ChevronRight,
-  Edit,
-  Trash2,
+  Kanban,
+  Table as TableIcon,
+  User as UserIcon,
 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { TaskAnalyticsPanel } from '@/components/tasks/task-analytics-panel'
+import { TaskAdvancedFilters, TaskFilters } from '@/components/tasks/task-advanced-filters'
+import { TaskCategoryBadge, TaskCategoryEmojiDisplay } from '@/components/tasks/task-category-badge'
+import { TaskUrgencyIndicator, TaskRowUrgencyHighlight } from '@/components/tasks/task-urgency-indicator'
+import { TaskKanbanView } from '@/components/tasks/task-kanban-view'
+import { TaskPriorityReport } from '@/components/tasks/task-priority-report'
+import { format, formatDistanceToNow } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 interface Task {
   id: string
@@ -45,8 +52,11 @@ interface Task {
   description: string | null
   status: string
   priority: string
-  dueDate: string | null
+  category: string
+  dueAt: string | null
   createdAt: string
+  updatedAt: string
+  statusChangedAt: string
   lead?: {
     id: string
     name: string
@@ -62,47 +72,42 @@ interface Task {
     name: string
     email: string
   }
+  subtasks?: Array<{
+    id: string
+    title: string
+    completed: boolean
+  }>
+  _count?: {
+    subtasks: number
+  }
 }
 
-const statusColors: Record<string, string> = {
-  PENDING: 'bg-yellow-100 text-yellow-800',
-  IN_PROGRESS: 'bg-blue-100 text-blue-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800',
-}
-
-const statusLabels: Record<string, string> = {
-  PENDING: 'Pendente',
-  IN_PROGRESS: 'Em Progresso',
-  COMPLETED: 'Concluída',
-  CANCELLED: 'Cancelada',
-}
-
-const priorityColors: Record<string, string> = {
-  LOW: 'bg-gray-100 text-gray-800',
-  MEDIUM: 'bg-yellow-100 text-yellow-800',
-  HIGH: 'bg-orange-100 text-orange-800',
-  URGENT: 'bg-red-100 text-red-800',
-}
-
-const priorityLabels: Record<string, string> = {
-  LOW: 'Baixa',
-  MEDIUM: 'Média',
-  HIGH: 'Alta',
-  URGENT: 'Urgente',
+interface User {
+  id: string
+  name: string
+  email: string
 }
 
 export default function TasksPage() {
   const { data: session } = useSession()
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [priorityFilter, setPriorityFilter] = useState<string>('')
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')
+  const [showPriorityReport, setShowPriorityReport] = useState(false)
+
+  const [filters, setFilters] = useState<TaskFilters>({
+    search: '',
+    status: 'ALL',
+    priority: 'ALL',
+    category: 'ALL',
+    assigneeId: 'ALL',
+    dueDateFilter: 'all'
+  })
 
   const fetchTasks = async () => {
     try {
@@ -112,9 +117,16 @@ export default function TasksPage() {
         limit: '20',
       })
 
-      if (searchTerm) params.append('search', searchTerm)
-      if (statusFilter) params.append('status', statusFilter)
-      if (priorityFilter) params.append('priority', priorityFilter)
+      if (filters.search) params.append('search', filters.search)
+      if (filters.status && filters.status !== 'ALL') params.append('status', filters.status)
+      if (filters.priority && filters.priority !== 'ALL') params.append('priority', filters.priority)
+      if (filters.category && filters.category !== 'ALL') params.append('category', filters.category)
+      if (filters.assigneeId && filters.assigneeId !== 'ALL') params.append('assigneeId', filters.assigneeId)
+      if (filters.dueDateFilter && filters.dueDateFilter !== 'all') {
+        params.append('dueDateFilter', filters.dueDateFilter)
+        if (filters.customDateFrom) params.append('customDateFrom', filters.customDateFrom.toISOString())
+        if (filters.customDateTo) params.append('customDateTo', filters.customDateTo.toISOString())
+      }
 
       const response = await fetch(`/api/tasks?${params}`)
 
@@ -138,29 +150,106 @@ export default function TasksPage() {
     }
   }
 
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch('/api/users')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setUsers(data.data.users)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    }
+  }
+
+  useEffect(() => {
+    fetchUsers()
+  }, [])
+
   useEffect(() => {
     fetchTasks()
-  }, [currentPage, searchTerm, statusFilter, priorityFilter])
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    setCurrentPage(1)
-    fetchTasks()
-  }
+  }, [currentPage, filters])
 
   const handleNewTask = () => {
     router.push('/admin/tasks/new')
   }
 
+  const handleTaskMove = async (taskId: string, newStatus: string) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/update`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      if (response.ok) {
+        // Update the task in the local state
+        setTasks(prev => prev.map(task =>
+          task.id === taskId
+            ? { ...task, status: newStatus, statusChangedAt: new Date().toISOString() }
+            : task
+        ))
+      } else {
+        console.error('Failed to update task status')
+      }
+    } catch (error) {
+      console.error('Error updating task status:', error)
+    }
+  }
+
+  const handleTaskClick = (task: Task) => {
+    router.push(`/admin/tasks/${task.id}`)
+  }
+
+  const handleTaskEdit = (task: Task) => {
+    router.push(`/admin/tasks/${task.id}/edit`)
+  }
+
+  const handleLeadClick = (leadId: string) => {
+    router.push(`/admin/leads/${leadId}`)
+  }
+
+  const handleShowPriorityReport = () => {
+    setShowPriorityReport(true)
+  }
+
+  const handlePriorityFilter = (priority: string) => {
+    setFilters(prev => ({ ...prev, priority }))
+    setShowPriorityReport(false)
+  }
+
   const handleExport = async () => {
     try {
-      const response = await fetch('/api/tasks/export')
+      // Build export URL with current filters
+      const params = new URLSearchParams()
+
+      if (filters.search) params.append('search', filters.search)
+      if (filters.status && filters.status !== 'ALL') params.append('status', filters.status)
+      if (filters.priority && filters.priority !== 'ALL') params.append('priority', filters.priority)
+      if (filters.category && filters.category !== 'ALL') params.append('category', filters.category)
+      if (filters.assigneeId && filters.assigneeId !== 'ALL') params.append('assigneeId', filters.assigneeId)
+      if (filters.dueDateFilter && filters.dueDateFilter !== 'all') {
+        params.append('dueDateFilter', filters.dueDateFilter)
+        if (filters.customDateFrom) params.append('customDateFrom', filters.customDateFrom.toISOString())
+        if (filters.customDateTo) params.append('customDateTo', filters.customDateTo.toISOString())
+      }
+
+      const response = await fetch(`/api/tasks/export?${params}`)
       if (response.ok) {
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `tasks-${new Date().toISOString().split('T')[0]}.csv`
+
+        // Get filename from response headers
+        const contentDisposition = response.headers.get('Content-Disposition')
+        const filename = contentDisposition
+          ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+          : `tasks-${new Date().toISOString().split('T')[0]}.csv`
+
+        a.download = filename
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(url)
@@ -179,32 +268,67 @@ export default function TasksPage() {
     router.push(`/admin/tasks/${task.id}/edit`)
   }
 
-  const handleCompleteTask = async (task: Task) => {
-    try {
-      const response = await fetch(`/api/tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'COMPLETED' }),
-      })
-
-      if (response.ok) {
-        fetchTasks() // Refresh the list
-      }
-    } catch (error) {
-      console.error('Error completing task:', error)
-    }
+  const handleViewLead = (leadId: string) => {
+    router.push(`/admin/leads/${leadId}`)
   }
 
-  const formatDueDate = (dueDate: string | null) => {
-    if (!dueDate) return '-'
-    const date = new Date(dueDate)
+  const handleViewKanban = (leadId: string) => {
+    router.push(`/admin/leads/kanban?lead=${leadId}`)
+  }
+
+  const formatDueDate = (dueAt: string | null) => {
+    if (!dueAt) return '-'
+    const date = new Date(dueAt)
     const now = new Date()
     const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 
-    if (diffDays < 0) return <span className="text-red-600">Atrasado</span>
-    if (diffDays === 0) return <span className="text-orange-600">Hoje</span>
-    if (diffDays === 1) return <span className="text-yellow-600">Amanhã</span>
-    return date.toLocaleDateString('pt-BR')
+    if (diffDays < 0) {
+      return (
+        <span className="text-red-600 font-medium">
+          Atrasado ({Math.abs(diffDays)} dia{Math.abs(diffDays) > 1 ? 's' : ''})
+        </span>
+      )
+    }
+    if (diffDays === 0) return <span className="text-orange-600 font-medium">Hoje</span>
+    if (diffDays === 1) return <span className="text-yellow-600 font-medium">Amanhã</span>
+    return format(date, 'dd/MM/yyyy', { locale: ptBR })
+  }
+
+  const formatLastUpdate = (updatedAt: string) => {
+    return formatDistanceToNow(new Date(updatedAt), {
+      addSuffix: true,
+      locale: ptBR
+    })
+  }
+
+  const getSubtaskProgress = (task: Task) => {
+    if (!task.subtasks || task.subtasks.length === 0) return null
+    const completed = task.subtasks.filter(s => s.completed).length
+    const total = task.subtasks.length
+    const percentage = (completed / total) * 100
+
+    return { completed, total, percentage }
+  }
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
+    }
+  }
+
+  const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        duration: 0.5
+      }
+    }
   }
 
   if (loading) {
@@ -213,8 +337,13 @@ export default function TasksPage() {
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
           <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-64 bg-gray-200 rounded"></div>
+            ))}
+          </div>
           <div className="space-y-4">
-            {[...Array(5)].map((_, i) => (
+            {[...Array(8)].map((_, i) => (
               <div key={i} className="h-16 bg-gray-200 rounded"></div>
             ))}
           </div>
@@ -238,14 +367,44 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="p-6 space-y-6"
+    >
+      {/* Header */}
+      <motion.div variants={itemVariants} className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
-          <p className="text-gray-600">Gerencie todas as tarefas e atividades</p>
+          <h1 className="text-3xl font-bold text-gray-900">Tarefas</h1>
+          <p className="text-gray-600">Sistema avançado de gerenciamento de tarefas</p>
         </div>
         <div className="flex space-x-2">
-          <Button variant="outline" onClick={handleExport}>
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('table')}
+              className="px-3"
+            >
+              <TableIcon className="h-4 w-4 mr-2" />
+              Tabela
+            </Button>
+            <Button
+              variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('kanban')}
+              className="px-3"
+            >
+              <Kanban className="h-4 w-4 mr-2" />
+              Kanban
+            </Button>
+          </div>
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            title="Exportar tarefas com filtros aplicados"
+          >
             <Download className="h-4 w-4 mr-2" />
             Exportar
           </Button>
@@ -254,240 +413,274 @@ export default function TasksPage() {
             Nova Tarefa
           </Button>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total de Tarefas</p>
-                <p className="text-2xl font-bold text-gray-900">{tasks.length}</p>
-              </div>
-              <div className="p-3 bg-blue-50 rounded-lg">
-                <Calendar className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Analytics Panel */}
+      {!showPriorityReport && (
+        <TaskAnalyticsPanel
+          tasks={tasks}
+          onShowPriorityReport={handleShowPriorityReport}
+        />
+      )}
 
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Pendentes</p>
-                <p className="text-2xl font-bold text-yellow-600">
-                  {tasks.filter(t => t.status === 'PENDING').length}
-                </p>
-              </div>
-              <div className="p-3 bg-yellow-50 rounded-lg">
-                <Clock className="h-6 w-6 text-yellow-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Em Progresso</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {tasks.filter(t => t.status === 'IN_PROGRESS').length}
-                </p>
-              </div>
-              <div className="p-3 bg-blue-50 rounded-lg">
-                <User className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Concluídas</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {tasks.filter(t => t.status === 'COMPLETED').length}
-                </p>
-              </div>
-              <div className="p-3 bg-green-50 rounded-lg">
-                <CheckCircle className="h-6 w-6 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Priority Report */}
+      {showPriorityReport && (
+        <motion.div variants={itemVariants}>
+          <div className="flex items-center justify-between mb-4">
+            <Button
+              variant="ghost"
+              onClick={() => setShowPriorityReport(false)}
+            >
+              ← Voltar aos Analytics
+            </Button>
+          </div>
+          <TaskPriorityReport
+            tasks={tasks}
+            onPriorityFilter={handlePriorityFilter}
+          />
+        </motion.div>
+      )}
 
       {/* Filters */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row gap-4 mb-6">
-            <form onSubmit={handleSearch} className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  type="search"
-                  placeholder="Buscar tarefas..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </form>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filtrar por status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Todos os status</SelectItem>
-                <SelectItem value="PENDING">Pendente</SelectItem>
-                <SelectItem value="IN_PROGRESS">Em Progresso</SelectItem>
-                <SelectItem value="COMPLETED">Concluída</SelectItem>
-                <SelectItem value="CANCELLED">Cancelada</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filtrar por prioridade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Todas as prioridades</SelectItem>
-                <SelectItem value="LOW">Baixa</SelectItem>
-                <SelectItem value="MEDIUM">Média</SelectItem>
-                <SelectItem value="HIGH">Alta</SelectItem>
-                <SelectItem value="URGENT">Urgente</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      <motion.div variants={itemVariants}>
+        <Card>
+          <CardContent className="p-6">
+            <TaskAdvancedFilters
+              filters={filters}
+              onFiltersChange={setFilters}
+              users={users}
+            />
+          </CardContent>
+        </Card>
+      </motion.div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tarefa</TableHead>
-                  <TableHead>Lead</TableHead>
-                  <TableHead>Responsável</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Prioridade</TableHead>
-                  <TableHead>Vencimento</TableHead>
-                  <TableHead>Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium text-gray-900">{task.title}</p>
-                        {task.description && (
-                          <p className="text-sm text-gray-600 truncate max-w-xs">
-                            {task.description}
-                          </p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {task.lead ? (
-                        <div>
-                          <p className="text-sm font-medium">{task.lead.name}</p>
-                          {task.lead.company && (
-                            <p className="text-xs text-gray-500">{task.lead.company}</p>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {task.assignee ? (
-                        <span className="text-sm">{task.assignee.name}</span>
-                      ) : (
-                        <span className="text-gray-400">Não atribuída</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={statusColors[task.status] || 'bg-gray-100 text-gray-800'}>
-                        {statusLabels[task.status] || task.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={priorityColors[task.priority] || 'bg-gray-100 text-gray-800'}>
-                        {priorityLabels[task.priority] || task.priority}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {formatDueDate(task.dueDate)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewTask(task)}
-                          title={`Ver detalhes da tarefa`}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditTask(task)}
-                          title="Editar tarefa"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        {task.status !== 'COMPLETED' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleCompleteTask(task)}
-                            title="Marcar como concluída"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
+      {/* Tasks View */}
+      <motion.div variants={itemVariants}>
+        {viewMode === 'kanban' ? (
+          <TaskKanbanView
+            tasks={tasks}
+            onTaskMove={handleTaskMove}
+            onTaskClick={handleTaskClick}
+            onTaskEdit={handleTaskEdit}
+            onLeadClick={handleLeadClick}
+          />
+        ) : (
+          <Card>
+            <CardContent className="p-6">
+              <div className="overflow-x-auto">
+                <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[50px]">Tipo</TableHead>
+                    <TableHead>Tarefa</TableHead>
+                    <TableHead>Lead</TableHead>
+                    <TableHead>Responsável</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Prioridade</TableHead>
+                    <TableHead>Vencimento</TableHead>
+                    <TableHead>Última Atualização</TableHead>
+                    <TableHead className="w-[100px]">Ações</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  <AnimatePresence>
+                    {tasks.map((task, index) => {
+                      const subtaskProgress = getSubtaskProgress(task)
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6">
-              <div className="text-sm text-gray-700">
-                Página {currentPage} de {totalPages}
-              </div>
-              <div className="flex space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  Próximo
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+                      return (
+                        <motion.tr
+                          key={task.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{ delay: index * 0.05 }}
+                          className="group hover:bg-gray-50"
+                        >
+                          <TableCell>
+                            <TaskRowUrgencyHighlight
+                              priority={task.priority as any}
+                              status={task.status as any}
+                              dueAt={task.dueAt}
+                            >
+                              <div className="flex items-center gap-2">
+                                <TaskCategoryEmojiDisplay category={task.category as any} />
+                                <TaskUrgencyIndicator
+                                  priority={task.priority as any}
+                                  status={task.status as any}
+                                  dueAt={task.dueAt}
+                                />
+                              </div>
+                            </TaskRowUrgencyHighlight>
+                          </TableCell>
+                          <TableCell>
+                            <div className="max-w-xs">
+                              <p className="font-medium text-gray-900 truncate">{task.title}</p>
+                              {task.description && (
+                                <p className="text-sm text-gray-600 truncate">{task.description}</p>
+                              )}
+                              {subtaskProgress && (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+                                    <div
+                                      className="bg-blue-600 h-1.5 rounded-full transition-all"
+                                      style={{ width: `${subtaskProgress.percentage}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-gray-500">
+                                    {subtaskProgress.completed}/{subtaskProgress.total}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {task.lead ? (
+                              <div className="flex items-center gap-2">
+                                <div>
+                                  <p className="text-sm font-medium">{task.lead.name}</p>
+                                  {task.lead.company && (
+                                    <p className="text-xs text-gray-500">{task.lead.company}</p>
+                                  )}
+                                </div>
+                                <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleViewLead(task.lead!.id)}
+                                    title="Ver lead"
+                                  >
+                                    <UserIcon className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleViewKanban(task.lead!.id)}
+                                    title="Ver no Kanban"
+                                  >
+                                    <Kanban className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {task.assignee ? (
+                              <span className="text-sm">{task.assignee.name}</span>
+                            ) : (
+                              <span className="text-gray-400">Não atribuída</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={
+                                task.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                                task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                                task.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                                'bg-red-100 text-red-800'
+                              }
+                            >
+                              {task.status === 'PENDING' ? 'Pendente' :
+                               task.status === 'IN_PROGRESS' ? 'Em Progresso' :
+                               task.status === 'COMPLETED' ? 'Concluída' : 'Cancelada'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={
+                                task.priority === 'LOW' ? 'bg-gray-100 text-gray-800' :
+                                task.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                task.priority === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                                'bg-red-100 text-red-800'
+                              }
+                            >
+                              {task.priority === 'LOW' ? 'Baixa' :
+                               task.priority === 'MEDIUM' ? 'Média' :
+                               task.priority === 'HIGH' ? 'Alta' : 'Urgente'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {formatDueDate(task.dueAt)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Clock className="h-3 w-3" />
+                              {formatLastUpdate(task.updatedAt)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleViewTask(task)}>
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  Ver detalhes
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleEditTask(task)}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Editar
+                                </DropdownMenuItem>
+                                {task.lead && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => handleViewLead(task.lead!.id)}>
+                                      <UserIcon className="h-4 w-4 mr-2" />
+                                      Ver Lead
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleViewKanban(task.lead!.id)}>
+                                      <Kanban className="h-4 w-4 mr-2" />
+                                      Ver no Kanban
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </motion.tr>
+                      )
+                    })}
+                  </AnimatePresence>
+                </TableBody>
+              </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-6">
+                <div className="text-sm text-gray-700">
+                  Página {currentPage} de {totalPages}
+                </div>
+                <div className="flex space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Próximo
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+            </CardContent>
+          </Card>
+        )}
+      </motion.div>
+    </motion.div>
   )
 }

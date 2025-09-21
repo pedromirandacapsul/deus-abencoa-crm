@@ -9,7 +9,11 @@ const createTaskSchema = z.object({
   description: z.string().optional(),
   status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).default('PENDING'),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
-  dueDate: z.string().transform(str => str ? new Date(str) : null).optional(),
+  category: z.enum(['CALL', 'WHATSAPP', 'EMAIL', 'MEETING', 'DOCUMENT', 'GENERAL']).default('GENERAL'),
+  dueAt: z.union([
+    z.string().transform(str => str ? new Date(str) : null),
+    z.null()
+  ]).optional(),
   leadId: z.string().min(1, 'Lead é obrigatório'),
   assigneeId: z.string().min(1, 'Responsável é obrigatório'),
 })
@@ -17,18 +21,23 @@ const createTaskSchema = z.object({
 const taskFiltersSchema = z.object({
   status: z.string().optional(),
   priority: z.string().optional(),
+  category: z.string().optional(),
   assigneeId: z.string().optional(),
   leadId: z.string().optional(),
   search: z.string().optional(),
+  dueDateFilter: z.enum(['all', 'today', 'tomorrow', 'this_week', 'overdue', 'custom']).optional(),
+  customDateFrom: z.string().optional(),
+  customDateTo: z.string().optional(),
   page: z.number().default(1),
   limit: z.number().default(20),
-  sortBy: z.enum(['createdAt', 'dueDate', 'title', 'priority']).default('createdAt'),
+  sortBy: z.enum(['createdAt', 'dueAt', 'title', 'priority', 'updatedAt']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 })
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
+    console.log('Session:', session)
     if (!session) {
       return NextResponse.json(
         { success: false, error: 'Não autenticado' },
@@ -37,12 +46,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    console.log('Request body:', body)
     const validatedData = createTaskSchema.parse(body)
+    console.log('Validated data:', validatedData)
 
     // Verify lead exists
     const lead = await prisma.lead.findUnique({
       where: { id: validatedData.leadId },
     })
+    console.log('Lead found:', lead)
 
     if (!lead) {
       return NextResponse.json(
@@ -55,6 +67,7 @@ export async function POST(request: NextRequest) {
     const assignee = await prisma.user.findUnique({
       where: { id: validatedData.assigneeId },
     })
+    console.log('Assignee found:', assignee)
 
     if (!assignee) {
       return NextResponse.json(
@@ -69,7 +82,8 @@ export async function POST(request: NextRequest) {
         description: validatedData.description,
         status: validatedData.status,
         priority: validatedData.priority,
-        dueDate: validatedData.dueDate,
+        category: validatedData.category,
+        dueAt: validatedData.dueAt,
         leadId: validatedData.leadId,
         assigneeId: validatedData.assigneeId,
         creatorId: session.user.id,
@@ -136,9 +150,13 @@ export async function GET(request: NextRequest) {
     const filters = taskFiltersSchema.parse({
       status: searchParams.get('status') || undefined,
       priority: searchParams.get('priority') || undefined,
+      category: searchParams.get('category') || undefined,
       assigneeId: searchParams.get('assigneeId') || undefined,
       leadId: searchParams.get('leadId') || undefined,
       search: searchParams.get('search') || undefined,
+      dueDateFilter: searchParams.get('dueDateFilter') as any || undefined,
+      customDateFrom: searchParams.get('customDateFrom') || undefined,
+      customDateTo: searchParams.get('customDateTo') || undefined,
       page: parseInt(searchParams.get('page') || '1'),
       limit: parseInt(searchParams.get('limit') || '20'),
       sortBy: searchParams.get('sortBy') as any || 'createdAt',
@@ -150,8 +168,57 @@ export async function GET(request: NextRequest) {
 
     if (filters.status) where.status = filters.status
     if (filters.priority) where.priority = filters.priority
+    if (filters.category) where.category = filters.category
     if (filters.assigneeId) where.assigneeId = filters.assigneeId
     if (filters.leadId) where.leadId = filters.leadId
+
+    // Date filters
+    if (filters.dueDateFilter && filters.dueDateFilter !== 'all') {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+      const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+      switch (filters.dueDateFilter) {
+        case 'today':
+          where.dueAt = {
+            gte: today,
+            lt: tomorrow
+          }
+          break
+        case 'tomorrow':
+          where.dueAt = {
+            gte: tomorrow,
+            lt: new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)
+          }
+          break
+        case 'this_week':
+          where.dueAt = {
+            gte: today,
+            lte: nextWeek
+          }
+          break
+        case 'overdue':
+          where.dueAt = {
+            lt: today
+          }
+          where.status = {
+            not: 'COMPLETED'
+          }
+          break
+        case 'custom':
+          if (filters.customDateFrom || filters.customDateTo) {
+            where.dueAt = {}
+            if (filters.customDateFrom) {
+              where.dueAt.gte = new Date(filters.customDateFrom)
+            }
+            if (filters.customDateTo) {
+              where.dueAt.lte = new Date(filters.customDateTo)
+            }
+          }
+          break
+      }
+    }
 
     if (filters.search) {
       where.OR = [
@@ -191,6 +258,16 @@ export async function GET(request: NextRequest) {
             email: true,
           },
         },
+        subtasks: {
+          orderBy: {
+            createdAt: 'asc'
+          }
+        },
+        _count: {
+          select: {
+            subtasks: true
+          }
+        }
       },
       orderBy: {
         [filters.sortBy]: filters.sortOrder,

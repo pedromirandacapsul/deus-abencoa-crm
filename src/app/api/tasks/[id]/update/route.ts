@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { authOptions } from '@/lib/auth'
 
-export async function GET(
+export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -14,9 +14,29 @@ export async function GET(
     }
 
     const { id } = params
+    const body = await request.json()
+    const { status, priority, category, assigneeId, leadId, dueAt, title, description } = body
 
-    const task = await prisma.task.findUnique({
+    // Prepare update data - only include fields that were provided
+    const updateData: any = {
+      updatedAt: new Date(),
+    }
+
+    if (status !== undefined) {
+      updateData.status = status
+      updateData.statusChangedAt = new Date()
+    }
+    if (priority !== undefined) updateData.priority = priority
+    if (category !== undefined) updateData.category = category
+    if (assigneeId !== undefined) updateData.assigneeId = assigneeId
+    if (leadId !== undefined) updateData.leadId = leadId
+    if (dueAt !== undefined) updateData.dueAt = dueAt ? new Date(dueAt) : null
+    if (title !== undefined) updateData.title = title
+    if (description !== undefined) updateData.description = description
+
+    const task = await prisma.task.update({
       where: { id },
+      data: updateData,
       include: {
         lead: {
           select: {
@@ -45,7 +65,6 @@ export async function GET(
             title: true,
             completed: true,
           },
-          orderBy: { createdAt: 'asc' }
         },
         _count: {
           select: {
@@ -55,16 +74,12 @@ export async function GET(
       },
     })
 
-    if (!task) {
-      return NextResponse.json({ error: 'Tarefa não encontrada' }, { status: 404 })
-    }
-
     return NextResponse.json({
       success: true,
       data: task,
     })
   } catch (error) {
-    console.error('Error fetching task:', error)
+    console.error('Error updating task:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

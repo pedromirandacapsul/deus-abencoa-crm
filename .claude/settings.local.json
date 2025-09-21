@@ -63,7 +63,14 @@
       "Bash(node:*)",
       "Bash(del fix-route-params.js)",
       "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma migrate deploy)",
-      "Bash(DATABASE_URL=\"file:./dev.db\" npm run dev)"
+      "Bash(DATABASE_URL=\"file:./dev.db\" npm run dev)",
+      "Bash(del \"node_modules\\.pnpm\\@prisma+client@5.22.0_prisma@5.22.0\\node_modules\\.prisma\\client\\query_engine-windows.dll.node\")",
+      "Bash(DATABASE_URL=\"file:./dev.db\" node create-sample-tasks.js)",
+      "Bash(del create-sample-tasks.js)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" node check-data.js)",
+      "Bash(del check-data.js)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" node check-session-user.js)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma migrate dev --name add-task-enhancements)"
     ],
     "deny": [],
     "ask": []

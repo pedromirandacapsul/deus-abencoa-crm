@@ -129,14 +129,34 @@ model Task {
   description String?
   dueAt       DateTime?
   status      String     @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  priority    String     @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  category    String     @default("GENERAL") // CALL, WHATSAPP, EMAIL, MEETING, DOCUMENT, GENERAL
   createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt @default(now())
   completedAt DateTime?
+  statusChangedAt DateTime @default(now())
 
   lead     Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
   assignee User @relation("TaskAssignee", fields: [assigneeId], references: [id])
   creator  User @relation("TaskCreator", fields: [creatorId], references: [id])
 
+  // Relação com subtarefas
+  subtasks TaskSubitem[]
+
   @@map("tasks")
+}
+
+model TaskSubitem {
+  id          String   @id @default(cuid())
+  taskId      String
+  title       String
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_subitems")
 }
 
 model AuditLog {
