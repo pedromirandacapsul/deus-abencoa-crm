@@ -57,6 +57,7 @@ model Lead {
   interest        String?
   notes           String?
   source          String?
+  sourceDetails   String?    // NEW: Subcategoria da origem (Meta Ads, Google Ads, etc)
   utmSource       String?
   utmMedium       String?
   utmCampaign     String?
@@ -64,13 +65,20 @@ model Lead {
   utmContent      String?
   referrer        String?
   consentLGPD     Boolean    @default(false)
-  status          String     @default("NEW") // NEW, CONTACTED, QUALIFIED, PROPOSAL, WON, LOST
+  status          String     @default("NEW") // NEW, NOT_ANSWERED_1, NOT_ANSWERED_2, CONTACTED, QUALIFIED, PROPOSAL, WON, LOST
   score           Int        @default(0)
   ownerId         String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   firstContactAt  DateTime?
   lastActivityAt  DateTime?
+  lastInteractionAt DateTime? // NEW: Última ligação, WhatsApp ou email
+  lastInteractionType String? // NEW: CALL, WHATSAPP, EMAIL
+  nextActionAt    DateTime?  // NEW: Data/hora da próxima ação agendada
+  nextActionType  String?    // NEW: Tipo da próxima ação (CALL, WHATSAPP, EMAIL, MEETING)
+  nextActionNotes String?    // NEW: Observações sobre a próxima ação
+  lossReason      String?    // NEW: Motivo da perda/desqualificação
+  lossDetails     String?    // NEW: Detalhes do motivo da perda
 
   // New fields for advanced features
   dealValue       Float?     @default(0)

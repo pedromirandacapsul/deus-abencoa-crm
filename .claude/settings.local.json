@@ -48,7 +48,22 @@
       "Bash(npm install:*)",
       "Bash(pnpm add:*)",
       "Bash(DATABASE_URL=\"file:./dev.db\" node create-default-tags.js)",
-      "Bash(del create-default-tags.js)"
+      "Bash(del create-default-tags.js)",
+      "Bash(npx prisma generate:*)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma db execute --stdin)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma studio --port 5556)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" node create-sample-tags.js)",
+      "Bash(del \"C:\\Users\\Pedro Miranda\\Documents\\Deus-abencoa\\create-sample-tags.js\")",
+      "Bash(npm cache clean:*)",
+      "Bash(yarn add:*)",
+      "Bash(del node_modules.prismaclientquery_engine-windows.dll.node)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma generate)",
+      "Bash(del check-admin-user.js)",
+      "Bash(npm run build:*)",
+      "Bash(node:*)",
+      "Bash(del fix-route-params.js)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma migrate deploy)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" npm run dev)"
     ],
     "deny": [],
     "ask": []

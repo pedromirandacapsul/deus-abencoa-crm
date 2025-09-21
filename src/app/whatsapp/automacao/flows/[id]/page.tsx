@@ -53,12 +53,13 @@ interface Flow {
   executions?: any[]
 }
 
-export default function EditFlowPage({ params }: { params: { id: string } }) {
+export default function EditFlowPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [flow, setFlow] = useState<Flow | null>(null)
+  const [flowId, setFlowId] = useState<string | null>(null)
 
   // Form data
   const [formData, setFormData] = useState({
@@ -105,13 +106,21 @@ export default function EditFlowPage({ params }: { params: { id: string } }) {
   ]
 
   useEffect(() => {
-    loadFlow()
-  }, [params.id])
+    params.then(({ id }) => {
+      setFlowId(id)
+    })
+  }, [params])
+
+  useEffect(() => {
+    if (flowId) {
+      loadFlow()
+    }
+  }, [flowId])
 
   const loadFlow = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/whatsapp/flows/${params.id}`)
+      const response = await fetch(`/api/whatsapp/flows/${flowId}`)
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -191,7 +200,7 @@ export default function EditFlowPage({ params }: { params: { id: string } }) {
         throw new Error(`${selectedTrigger.label} requer um valor`)
       }
 
-      const response = await fetch(`/api/whatsapp/flows/${params.id}`, {
+      const response = await fetch(`/api/whatsapp/flows/${flowId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

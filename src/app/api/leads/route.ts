@@ -229,6 +229,11 @@ export async function GET(request: NextRequest) {
             email: true,
           },
         },
+        tagAssignments: {
+          include: {
+            tag: true
+          }
+        },
         _count: {
           select: {
             activities: true,
