@@ -44,6 +44,10 @@ model User {
   messageFlows           MessageFlow[]
   tagAssignments         LeadTagAssignment[]
 
+  // Opportunity relations
+  ownedOpportunities     Opportunity[]  @relation("OpportunityOwner")
+  stageHistoryChanges    StageHistory[] @relation("StageHistoryUser")
+
   @@map("users")
 }
 
@@ -103,6 +107,9 @@ model Lead {
   whatsappConversations  WhatsAppConversation[]
   tagAssignments         LeadTagAssignment[]
 
+  // Opportunity relations
+  opportunities          Opportunity[]
+
   @@map("leads")
 }
 
@@ -121,24 +128,26 @@ model Activity {
 }
 
 model Task {
-  id          String     @id @default(cuid())
-  leadId      String
-  assigneeId  String
-  creatorId   String
-  title       String
-  description String?
-  dueAt       DateTime?
-  status      String     @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
-  priority    String     @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
-  category    String     @default("GENERAL") // CALL, WHATSAPP, EMAIL, MEETING, DOCUMENT, GENERAL
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt @default(now())
-  completedAt DateTime?
+  id            String     @id @default(cuid())
+  leadId        String?    // Made optional to allow opportunity-only tasks
+  opportunityId String?    // NEW: Allow tasks linked to opportunities
+  assigneeId    String
+  creatorId     String
+  title         String
+  description   String?
+  dueAt         DateTime?
+  status        String     @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  priority      String     @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  category      String     @default("GENERAL") // CALL, WHATSAPP, EMAIL, MEETING, DOCUMENT, GENERAL
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt @default(now())
+  completedAt   DateTime?
   statusChangedAt DateTime @default(now())
 
-  lead     Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  assignee User @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  creator  User @relation("TaskCreator", fields: [creatorId], references: [id])
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunity Opportunity? @relation("OpportunityTasks", fields: [opportunityId], references: [id], onDelete: Cascade)
+  assignee    User         @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  creator     User         @relation("TaskCreator", fields: [creatorId], references: [id])
 
   // Relação com subtarefas
   subtasks TaskSubitem[]
@@ -771,4 +780,71 @@ model LeadTagAssignment {
   @@index([leadId])
   @@index([tagId])
   @@map("lead_tag_assignments")
+}
+
+// Opportunities (Deals) System
+model Opportunity {
+  id               String    @id @default(cuid())
+  leadId           String
+  ownerId          String
+  stage            String    @default("NEW") // NEW, QUALIFICATION, DISCOVERY, PROPOSAL, NEGOTIATION, WON, LOST
+  amountBr         Float?    // nullable until PROPOSAL; required from PROPOSAL onwards
+  currency         String    @default("BRL")
+  probability      Int       @default(0) // 0-100, auto from stage but editable by manager
+  expectedCloseAt  DateTime?
+  discountPct      Float?    // 0-100
+  costEstimatedBr  Float?
+  lostReason       String?   // required when stage = LOST
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  closedAt         DateTime? // set when WON
+
+  lead          Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  owner         User               @relation("OpportunityOwner", fields: [ownerId], references: [id])
+  items         OpportunityItem[]
+  stageHistory  StageHistory[]
+  tasks         Task[]             @relation("OpportunityTasks")
+
+  @@index([stage])
+  @@index([ownerId])
+  @@index([expectedCloseAt])
+  @@map("opportunities")
+}
+
+model OpportunityItem {
+  id             String  @id @default(cuid())
+  opportunityId  String
+  productName    String
+  qty            Int
+  unitPriceBr    Float
+  subtotalBr     Float   // computed: qty * unitPriceBr
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@map("opportunity_items")
+}
+
+model StageHistory {
+  id             String   @id @default(cuid())
+  opportunityId  String
+  stageFrom      String?  // null if initial
+  stageTo        String
+  changedBy      String
+  changedAt      DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  user        User        @relation("StageHistoryUser", fields: [changedBy], references: [id])
+
+  @@index([opportunityId])
+  @@map("stage_history")
+}
+
+model StageProbability {
+  id          String @id @default(cuid())
+  stage       String @unique
+  probability Int    // 0-100
+
+  @@map("stage_probabilities")
 }

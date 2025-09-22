@@ -12,7 +12,7 @@ const updateSubtaskSchema = z.object({
 // PATCH - Update subtask
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string; subtaskId: string } }
+  { params }: { params: Promise<{ id: string; subtaskId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -20,7 +20,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id, subtaskId } = params
+    const { id, subtaskId } = await params
     const body = await request.json()
 
     // Validate input
@@ -67,7 +67,7 @@ export async function PATCH(
 // DELETE - Delete subtask
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; subtaskId: string } }
+  { params }: { params: Promise<{ id: string; subtaskId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -75,7 +75,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id, subtaskId } = params
+    const { id, subtaskId } = await params
 
     // Verify subtask exists and belongs to the task
     const subtask = await prisma.taskSubitem.findFirst({

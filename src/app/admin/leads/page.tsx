@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
   Table,
@@ -46,7 +47,6 @@ import {
   Activity,
   BarChart3
 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { AnimatedMetricCard } from '@/components/dashboard/animated-metric-card'
 import { AnimatedDashboardContainer, AnimatedDashboardItem } from '@/components/dashboard/animated-dashboard-container'
 import { AnimatedChartContainer } from '@/components/dashboard/animated-chart-container'
@@ -130,6 +130,7 @@ export default function LeadsPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')
+  const [convertingLead, setConvertingLead] = useState<string | null>(null)
 
   // Mock data para os gráficos (em produção seria vindo da API)
   const chartData = [
@@ -183,6 +184,35 @@ export default function LeadsPage() {
       console.error('Error fetching leads:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const convertToOpportunity = async (leadId: string) => {
+    setConvertingLead(leadId)
+    try {
+      const response = await fetch(`/api/leads/${leadId}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amountBr: 10000, // Valor padrão, pode ser customizado
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        alert('Lead convertido em oportunidade com sucesso!')
+        fetchLeads() // Refresh the list
+        // Redireciona para o kanban de oportunidades
+        router.push('/admin/opportunities/kanban')
+      } else {
+        const error = await response.json()
+        alert(`Erro: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Erro ao converter lead:', error)
+      alert('Erro ao converter lead')
+    } finally {
+      setConvertingLead(null)
     }
   }
 
